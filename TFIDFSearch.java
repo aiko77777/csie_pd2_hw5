@@ -2,6 +2,7 @@ import java.io.InputStreamReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.io.BufferedReader;
 import java.io.File;
@@ -54,8 +55,8 @@ public class TFIDFSearch {
                 count++;
             }
         }
-        
-        double result=count/splited_text_section.length;
+        double splited_text_section_leng=splited_text_section.length;
+        double result=count/splited_text_section_leng;
         //System.out.println("tf="+result);
         return result;
     }
@@ -72,11 +73,11 @@ public class TFIDFSearch {
         
     }
 
-    public HashMap<Integer,Double> AND_Filter(String tc_line,ArrayList<Trie> trie_list,ArrayList<String> text_secs){
+    public HashMap<Integer,Double> AND_Filter(String tc_line,ArrayList<Trie> trie_list,ArrayList<String> text_secs,FileWriter writer){
         ArrayList<Integer> del_index=new ArrayList<>();
         ArrayList<String> simplified_tc_line=new ArrayList<>();
         ArrayList<Double> simplified_count_in_idf=new ArrayList<>();
-        ArrayList<Double> tf_idf_sum_of_text=new ArrayList<>();
+        HashMap<String,Double> repeat_tc_line=new HashMap<>();
         HashMap<Integer, Double> filtered_texts_And_tfidf_value = new HashMap<>();
 
         tc_line=(tc_line.replaceAll("AND","")).replaceAll("\\s+"," ");
@@ -84,84 +85,108 @@ public class TFIDFSearch {
 //simplify the repeatitive words and the same value in IDF calculation
         for(String tem :tc_line.split(" ")){
             if(!simplified_tc_line.contains(tem)){
+                System.out.println("no repeat");
                 simplified_tc_line.add(tem);
+                repeat_tc_line.put(tem,1.0);
                 Double count_trie=(double) 0;
                 for(Trie trie : trie_list){
                     if(trie.search(tem)){   //how many text_sections can find the word
                         count_trie++;
                     }
-                    if(!trie.search(tem)){  //take the intersection
+                    else{  //take the intersection
                         del_index.add(trie_list.indexOf(trie));
                     }
                 }
                 simplified_count_in_idf.add(count_trie);
             }
+            else{
+                Double value=repeat_tc_line.get(tem);
+                
+                repeat_tc_line.computeIfPresent(tem, (k, v) -> v + 1);
+            }
         }
+        //System.out.println(repeat_tc_line.get("the"));
+        System.out.println(repeat_tc_line.keySet());
 
-        // for(String simp_tc_unit : simplified_tc_line ){
-        //     for(Trie trie:trie_list){
-        //         if(!trie.search(simp_tc_unit)){
-        //             del_index.add(trie_list.indexOf(trie)); //use for intersection set
-        //         }
-        //     }
-        // }
         if(del_index.size()!=text_secs.size()){ //if it has intersection
-
-            for(int i =0;i<text_secs.size();i++){
+           
+            for(Integer i =0;i<text_secs.size();i++){
+                //System.out.println(i);
                 if(del_index.contains(i)){
                     continue;
                 }
                 Double tf_idf_result=(double) 0;
-                for(String tem:tc_line.split(" ")){
+                
+                for(String tem:repeat_tc_line.keySet()){
+                    //System.out.println("word:"+tem);
+                    //System.out.println("text_sec"+text_secs.get(i));
                     Double tf_result=calculate_tf(tem,(text_secs.get(i).split(" ")));
                     Double idf_result=calculate_idf(text_secs,simplified_count_in_idf.get(simplified_tc_line.indexOf(tem)));
-                    tf_idf_result+=tf_result*idf_result;
+                    // try {
+                    //     writer.append(i.toString());
+                    //     writer.append(" ");
+                    //     writer.append(tf_result.toString());
+                    //     writer.append("\r\n");
+                    // } catch (IOException e) {
+                    //     // TODO Auto-generated catch block
+                    //     e.printStackTrace();
+                    // }
+                    tf_idf_result+=tf_result*idf_result*repeat_tc_line.get(tem);
+                    //System.out.println("tf_value="+tf_result);
                 }
                 //System.out.println(tf_idf_result);
                 filtered_texts_And_tfidf_value.put(i,tf_idf_result);
             }
         }
         
-            
+        System.out.println("AND method finish");
         return filtered_texts_And_tfidf_value;
     }
     public HashMap<Integer,Double> OR_filter(String tc_line,ArrayList<Trie> trie_list,ArrayList<String> text_secs){
         ArrayList<Integer> union_list=new ArrayList<>();
         ArrayList<String> simplified_tc_line=new ArrayList<>();
         ArrayList<Double> simplified_count_in_idf=new ArrayList<>();
+        HashMap<String,Double> repeat_tc_line=new HashMap<>();
+
         HashMap<Integer, Double> filtered_texts_And_tfidf_value = new HashMap<>();
         tc_line=(tc_line.replaceAll("OR","")).replaceAll("\\s+"," ");
 //get the union in texts
         for(String tem:tc_line.split(" ")){
-            for(Trie trie : trie_list){
-                if(trie.search(tem)){
-                    if(!union_list.contains(trie_list.indexOf(trie))){
-                        union_list.add(trie_list.indexOf(trie));    //the index of text in text_section which is union
+            if(!simplified_tc_line.contains(tem)){
+                repeat_tc_line.put(tem,1.0);
+                simplified_tc_line.add(tem);
+                for(Trie trie : trie_list){
+                    if(trie.search(tem)){
+                        if(!union_list.contains(trie_list.indexOf(trie))){
+                            union_list.add(trie_list.indexOf(trie));    //the index of text in text_section which is union
+                        }
                     }
                 }
             }
+            else{
+                repeat_tc_line.put(tem,repeat_tc_line.get(tem)+1);
+            }
+            
         }
         //System.out.println("unionlist="+union_list);
 
 //simplify the repeatitive words and the same value in IDF calculation      //only use for idf
-        for(String tem :tc_line.split(" ")){
-            if(!simplified_tc_line.contains(tem)){
-                simplified_tc_line.add(tem);
-                Double count_trie=(double) 0;
-                for(Trie trie : trie_list){
-                    if(trie.search(tem)){   //how many text_sections can find the word
-                        count_trie++;
-                    }
+        for(String tem :simplified_tc_line){
+            Double count_trie=(double) 0;
+            for(Trie trie : trie_list){
+                if(trie.search(tem)){   //how many text_sections can find the word
+                    count_trie++;
                 }
-                simplified_count_in_idf.add(count_trie);
             }
+            simplified_count_in_idf.add(count_trie);
+            
         }
         for(int i=0;i<union_list.size();i++){
             Double tf_idf_result=(double) 0;
-            for(String tem:tc_line.split(" ")){
+            for(String tem:repeat_tc_line.keySet()){
                 Double tf_result=calculate_tf(tem,(text_secs.get(union_list.get(i)).split(" ")));
                 Double idf_result=calculate_idf(text_secs,simplified_count_in_idf.get(simplified_tc_line.indexOf(tem)));
-                tf_idf_result+=tf_result*idf_result;
+                tf_idf_result+=tf_result*idf_result*repeat_tc_line.get(tem);
                 //System.out.println(tem+"tf="+tf_idf_result);
                 //System.out.println(tem+"idf"+idf_result);
             }
@@ -191,7 +216,7 @@ public class TFIDFSearch {
                     
         
 //store the every text section in Trie and store all Tries in Obj Arraylist:
-        ArrayList<Trie> Trie_list=new ArrayList<>();
+        //ArrayList<Trie> Trie_list=new ArrayList<>();
         ArrayList<Trie> Trie_list2=new ArrayList<>();
 
         for(int i=0;i<deserialized.size();i++){
@@ -201,7 +226,7 @@ public class TFIDFSearch {
                     the_tree.insert(segment);
                 }
             }
-            Trie_list.add(the_tree);
+            //Trie_list.add(the_tree);
             Trie_list2.add(the_tree);
         }
 //read the tc
@@ -211,25 +236,49 @@ public class TFIDFSearch {
             Integer n;   //it's the number 
             String line2;   //the query
             n=Integer.valueOf(reader.readLine());    
-            
-            while ((line2 = reader.readLine()) != null) {   
+            int line_count=0;
+            while ((line2 = reader.readLine()) != null) {
+                System.out.println("line_count="+line_count);
+                line_count+=1;   
                 ArrayList<Double> tf_udf_value=new ArrayList<>();
                 ArrayList<Integer> sorted_key=new ArrayList<>();//sorted text_sec
+               
                 if(line2.contains("AND")){
-                    filtered_texts_And_tfidf_value=search.AND_Filter(line2, Trie_list2,deserialized);
-
+                    System.out.println("AND start");
                     
-                    for(Double values:filtered_texts_And_tfidf_value.values()){
-                        tf_udf_value.add(values);
-                    }
-                    tf_udf_value.sort(Comparator.reverseOrder()); //sorted tf_idf values
-                    for(double values:tf_udf_value){
-                        for(Integer key:filtered_texts_And_tfidf_value.keySet()){
-                            if(filtered_texts_And_tfidf_value.get(key)==values){
-                                sorted_key.add(key);
+                    filtered_texts_And_tfidf_value=search.AND_Filter(line2, Trie_list2,deserialized,writer);
+                    if(!filtered_texts_And_tfidf_value.isEmpty()){
+                        for(Double values:filtered_texts_And_tfidf_value.values()){
+                            tf_udf_value.add(values);
+                            //System.out.println(values);
+                        }
+                        
+                        tf_udf_value.sort(Comparator.reverseOrder()); //sorted tf_idf values
+                        //System.out.println(tf_udf_value.subList(0, n));
+                        ArrayList<Integer> sort_key=new ArrayList<>(filtered_texts_And_tfidf_value.keySet());
+                        sort_key.sort(null);
+                        for(Double values:tf_udf_value.subList(0, n)){
+                            //System.out.println(values);
+                            for(Integer key:sort_key){
+                                
+                                if(filtered_texts_And_tfidf_value.get(key).equals(values) && !sorted_key.contains(key)){                        
+                                        sorted_key.add(key);
+                                        // writer.append(key.toString());
+                                        // writer.append(" ");                                                    
+                                        // writer.append(values.toString());
+                                        // writer.append("\r\n");                                                    
+                                       
+                                      
+                                }
                             }
                         }
+                        
+
                     }
+                    else{
+                        System.out.println("no intersection");
+                    }
+                    
                     for(int i=0;i<n;i++){
                         
                         if(i>=sorted_key.size()){
@@ -242,24 +291,36 @@ public class TFIDFSearch {
                             writer.append(" ");
                         }
                     }
-                    
+
+                    // for(Integer num: sorted_key){
+                    //     writer.append(num.toString());
+                    //     writer.append(" ");
+                    // }
+                    System.out.println("ANd finish");
                 }
                 else {
                     filtered_texts_And_tfidf_value=search.OR_filter(line2, Trie_list2,deserialized);
-
+                    System.out.println("OR start");
                     
                     for(Double values:filtered_texts_And_tfidf_value.values()){
                         tf_udf_value.add(values);
                     }
                     tf_udf_value.sort(Comparator.reverseOrder()); //sorted tf_idf values
                     //System.out.println(tf_udf_value);
-                    for(double values:tf_udf_value){
-                        for(Integer key:filtered_texts_And_tfidf_value.keySet()){
-                            if(filtered_texts_And_tfidf_value.get(key)==values){
-                                sorted_key.add(key);
+                    if(!filtered_texts_And_tfidf_value.isEmpty()){
+
+                        ArrayList<Integer> sort_key=new ArrayList<>(filtered_texts_And_tfidf_value.keySet());
+                        sort_key.sort(null);
+
+                        for(double values:tf_udf_value.subList(0, n)){
+                            for(Integer key:sort_key){
+                                if(filtered_texts_And_tfidf_value.get(key).equals(values) &&!sorted_key.contains(key)){
+                                    sorted_key.add(key);
+                                }
                             }
                         }
                     }
+                    
                     //System.out.println(sorted_key);
                     for(int i=0;i<n;i++){
                         
@@ -273,7 +334,14 @@ public class TFIDFSearch {
                             writer.append(" ");
                         }
                     }
+                    System.out.println("OR finish");
                 }
+
+
+                // for(Integer num: sorted_key){
+                //     writer.append(num.toString());
+                //     writer.append(" ");
+                // }
                 writer.append("\r\n");
                 
                
